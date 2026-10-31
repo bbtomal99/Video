@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
 
 import type {
@@ -13,6 +13,7 @@ import type {
 import { INITIAL_VIDEOS, QUICK_TOPICS } from './data/mockVideos';
 import { calculateMetrics } from './utils/metrics';
 import { fetchYouTubeVideos } from './services/youtubeApi';
+import { useAuth } from './context/AuthContext';
 
 import { Navbar } from './components/layout/Navbar';
 import { KpiStatsBar } from './components/analytics/KpiStatsBar';
@@ -22,8 +23,11 @@ import { VideoTable } from './components/video/VideoTable';
 import { VideoDetailModal } from './components/modals/VideoDetailModal';
 import { ApiKeyModal } from './components/modals/ApiKeyModal';
 import { CodeModal } from './components/modals/CodeModal';
+import { AuthModal } from './components/modals/AuthModal';
 
 export default function App(): React.JSX.Element {
+  const { user } = useAuth();
+
   // Data State
   const [videos, setVideos] = useState<VideoItem[]>(() =>
     INITIAL_VIDEOS.map(calculateMetrics)
@@ -44,6 +48,7 @@ export default function App(): React.JSX.Element {
   const [showSavedOnly, setShowSavedOnly] = useState<boolean>(false);
 
   // Modals & Live API State
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isApiModalOpen, setIsApiModalOpen] = useState<boolean>(false);
   const [isCodeModalOpen, setIsCodeModalOpen] = useState<boolean>(false);
   const [apiKey, setApiKey] = useState<string>('');
@@ -53,12 +58,36 @@ export default function App(): React.JSX.Element {
   const [apiError, setApiError] = useState<string>('');
   const [isLiveMode, setIsLiveMode] = useState<boolean>(false);
 
+  // Sync saved videos from browser storage per authenticated user or guest
+  useEffect(() => {
+    const storageKey = user ? `vidiq_saved_${user.uid}` : 'vidiq_saved_guest';
+    try {
+      const raw = localStorage.getItem(storageKey);
+      if (raw) {
+        setSavedVideos(JSON.parse(raw));
+      } else {
+        setSavedVideos([]);
+      }
+    } catch {
+      setSavedVideos([]);
+    }
+  }, [user]);
+
   // Toggle Save Video
   const toggleSaveVideo = (id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    setSavedVideos((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
+    setSavedVideos((prev) => {
+      const updated = prev.includes(id)
+        ? prev.filter((item) => item !== id)
+        : [...prev, id];
+      const storageKey = user ? `vidiq_saved_${user.uid}` : 'vidiq_saved_guest';
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch {
+        // Ignore storage write error
+      }
+      return updated;
+    });
   };
 
   // Live YouTube API Fetcher
@@ -207,6 +236,7 @@ export default function App(): React.JSX.Element {
         onToggleSaved={() => setShowSavedOnly(!showSavedOnly)}
         onOpenCodeModal={() => setIsCodeModalOpen(true)}
         onOpenApiModal={() => setIsApiModalOpen(true)}
+        onOpenAuthModal={() => setIsAuthModalOpen(true)}
       />
 
       {/* Main Content */}
@@ -305,6 +335,12 @@ export default function App(): React.JSX.Element {
       <CodeModal
         isOpen={isCodeModalOpen}
         onClose={() => setIsCodeModalOpen(false)}
+      />
+
+      {/* Firebase Authentication & Google Login Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
       />
     </div>
   );
